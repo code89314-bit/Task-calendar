@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ja"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>業務予定</title>
+<meta name="theme-color" content="#2f6b55">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="業務予定">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>body{margin:0}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}</style>
+<script src="qrcode.js"></script>
+<script src="jsQR.js"></script>
+</head><body>
+<style>
+/* Layout: one narrow column — my upcoming duties, then month calendar to enter days off, then the selected day's full assignment */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1d2420; --muted:#68726c; --line:#dfe3df;
+  --accent:#2f6b55; --accent-soft:#e2eee8; --warn:#b4531f; --warn-soft:#f8e7dc;
+  --sun:#c0392b; --sat:#2c5aa0; --sel-fg:#ffffff;
+  --sans:"Zen Kaku Gothic New","Hiragino Sans","Noto Sans JP",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141816; --surface:#1d2320; --fg:#e7ece9; --muted:#97a29c; --line:#2d3531;
+  --accent:#7cc2a5; --accent-soft:#213a30; --warn:#f0a070; --warn-soft:#3d2a1f;
+  --sun:#f08a7e; --sat:#8ab4f0; --sel-fg:#10201a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141816; --surface:#1d2320; --fg:#e7ece9; --muted:#97a29c; --line:#2d3531;
+  --accent:#7cc2a5; --accent-soft:#213a30; --warn:#f0a070; --warn-soft:#3d2a1f;
+  --sun:#f08a7e; --sat:#8ab4f0; --sel-fg:#10201a; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.6}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:28px 40px}
+h1{font-size:1.5rem;margin:0;letter-spacing:.02em;text-wrap:balance}
+h2{font-size:.78rem;letter-spacing:.12em;color:var(--muted);margin:26px 0 10px;font-weight:700}
+.sub{color:var(--muted);font-size:.85rem;margin:2px 0 0}
+.status{font-size:.75rem;color:var(--muted);margin-top:4px;min-height:1.2em}
+
+/* upcoming */
+.up{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.up li{display:grid;grid-template-columns:6.6rem 1fr auto;gap:10px;align-items:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px 14px}
+.up li.today{border-color:var(--accent)}
+.up .dt{font-variant-numeric:tabular-nums;font-size:.92rem}
+.up .dt.s6{color:var(--sat)}
+.up .role{font-weight:700;font-size:1.05rem}
+.up .role.off{color:var(--muted);font-weight:500}
+.up .why{font-size:.75rem;color:var(--muted)}
+.tag{font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--warn-soft);color:var(--warn);white-space:nowrap}
+
+/* month calendar */
+.tabs{display:flex;gap:6px;margin-bottom:8px}
+.tabs button{font:inherit;font-weight:700;font-size:.85rem;padding:5px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer}
+.tabs button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--sel-fg)}
+.cal{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.dow{text-align:center;font-size:.72rem;color:var(--muted)}
+.dow.s0{color:var(--sun)} .dow.s6{color:var(--sat)}
+.day{display:flex;flex-direction:column;align-items:center;gap:1px;min-height:4.3rem;padding:4px 1px;
+  border-radius:8px;border:1px solid transparent;background:none;color:var(--fg);font:inherit;cursor:pointer;min-width:0}
+.day:hover{background:var(--accent-soft)}
+.day:focus-visible,.tabs button:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.day .d{font-family:var(--mono);font-size:.9rem;line-height:1.2}
+.day.s0 .d{color:var(--sun)} .day.s6 .d{color:var(--sat)}
+.day .r{font-size:.7rem;font-weight:700;color:var(--accent);line-height:1.2}
+.day .r.off{color:var(--muted);font-weight:500}
+.day .o{font-family:var(--mono);font-size:.55rem;color:var(--warn);line-height:1.15;text-align:center;word-break:break-all}
+.day.today{border-color:var(--accent)}
+.day.sel{background:var(--accent)}
+.day.sel .d,.day.sel .r,.day.sel .o{color:var(--sel-fg)}
+.day.blank{visibility:hidden;pointer-events:none}
+.day.past{opacity:.5}
+
+/* editor */
+.ed{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;margin-top:10px;display:grid;gap:12px}
+.ed h3{margin:0;font-size:1.05rem}
+.chips{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.chip{font:inherit;font-family:var(--mono);font-weight:500;font-size:.95rem;padding:8px 0;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:var(--sel-fg)}
+.chip.me{text-decoration:underline;text-underline-offset:3px}
+.closed{display:flex;gap:8px;align-items:center;font-size:.9rem}
+.closed input{width:1.1rem;height:1.1rem;accent-color:var(--accent)}
+.hint{font-size:.78rem;color:var(--muted);margin:0}
+.asg{width:100%;border-collapse:collapse;font-size:.88rem}
+.asg td{padding:5px 4px;border-top:1px solid var(--line)}
+.asg td:first-child{color:var(--muted);width:6.5rem}
+.asg tr.mine td{font-weight:700;color:var(--accent)}
+.note{color:var(--muted);font-size:.78rem;margin:14px 0 0}
+
+/* settings */
+.set{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.set summary{cursor:pointer;font-weight:700;font-size:.95rem}
+.set summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vlist{display:grid;gap:6px;margin:12px 0}
+.vbtn,.btn{font:inherit;font-size:.9rem;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;text-align:left}
+.vbtn b{color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--sel-fg);font-weight:700;text-align:center}
+.btn.danger{color:var(--warn);border-color:var(--warn)}
+.btn:focus-visible,.vbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.form{display:grid;gap:14px;margin-top:6px}
+.fld{display:grid;gap:4px}
+.fld>span{font-size:.8rem;font-weight:700;color:var(--muted);letter-spacing:.04em}
+.fld input[type=text],.fld input[type=date],.row input,.row select,.fld select{font:inherit;font-size:.95rem;padding:7px 9px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);min-width:0}
+.rows{display:grid;gap:6px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) auto;gap:6px;align-items:center}
+.row .x{font:inherit;font-size:.8rem;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--muted);cursor:pointer}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.err{color:var(--warn);font-size:.85rem;margin:0;font-weight:700}
+.chips.small .chip{font-size:.85rem;padding:6px 0}
+.vol{display:inline-block;margin-left:6px;font-size:.72rem;font-weight:700;padding:1px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent);vertical-align:2px}
+.vol.big{background:var(--warn);color:var(--sel-fg)}
+.tks{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:2px}
+.tks li{display:block;background:none;border:0;padding:0;font-size:.8rem;color:var(--fg)}
+.tks b{font-family:var(--mono);font-weight:500;color:var(--warn);margin-right:4px}
+.day .tdot{font-size:.55rem;color:var(--warn);line-height:1}
+.day.sel .tdot{color:var(--sel-fg)}
+.day .hol{font-size:.5rem;color:var(--sun);line-height:1}
+.day.sel .hol{color:var(--sel-fg)}
+.tlist{display:grid;gap:6px;margin-bottom:10px}
+.tlist .vbtn{display:grid;gap:2px}
+.empty{color:var(--muted);font-size:.85rem;margin:0 0 10px}
+.radios{display:flex;gap:6px;flex-wrap:wrap}
+.radios label{display:flex;gap:4px;align-items:center;font-size:.9rem;padding:6px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.radios input{accent-color:var(--accent)}
+.chips.dows{grid-template-columns:repeat(6,minmax(0,1fr))}
+/* today's checklist */
+.alert{background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;padding:10px 14px;display:grid;gap:4px;margin-bottom:10px}
+.alert b{color:var(--warn);font-size:.8rem;letter-spacing:.06em}
+.alert p{margin:0;font-size:.92rem;font-weight:700}
+.alert p span{font-weight:500;color:var(--muted);font-size:.82rem}
+.pre{font-size:.85rem;color:var(--muted);margin:0 0 10px;padding:8px 12px;border:1px dashed var(--line);border-radius:10px}
+.pre b{color:var(--fg)}
+.next{display:flex;gap:12px;align-items:center;background:var(--accent);color:var(--sel-fg);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.next .lbl{font-size:.72rem;letter-spacing:.1em;opacity:.85}
+.next .nm{font-size:1.1rem;font-weight:700;line-height:1.35}
+.next button{margin-left:auto;font:inherit;font-weight:700;font-size:.85rem;padding:8px 12px;border-radius:999px;border:0;background:var(--sel-fg);color:var(--accent);cursor:pointer;white-space:nowrap}
+.done-all{background:var(--accent-soft);color:var(--accent);border-radius:12px;padding:12px 14px;font-weight:700;margin-bottom:10px}
+.ck{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 14px 10px}
+.ck h3{font-size:.75rem;letter-spacing:.12em;color:var(--muted);margin:10px 0 4px}
+.ck label{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line);cursor:pointer;font-size:.95rem}
+.ck h3+label{border-top:0}
+.ck input{width:1.25rem;height:1.25rem;margin-top:.15rem;accent-color:var(--accent);flex:0 0 auto}
+.ck .tm{font-family:var(--mono);font-size:.8rem;color:var(--warn);margin-right:4px}
+.ck .mm{display:block;font-size:.75rem;color:var(--muted)}
+.ck label.done .tx{color:var(--muted);text-decoration:line-through}
+.new{display:inline-block;font-size:.62rem;font-weight:700;padding:0 6px;border-radius:999px;background:var(--warn);color:var(--sel-fg);margin-left:6px;vertical-align:2px}
+.carry{margin-top:10px}
+.carry h3{color:var(--warn)}
+.meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.meta select{font:inherit;font-size:.95rem;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.meta .btn{font-size:.85rem;padding:7px 12px;text-align:center}
+.welcome{background:var(--surface);border:1px solid var(--accent);border-radius:12px;padding:14px;margin-top:14px;display:grid;gap:10px}
+.welcome h3{margin:0;font-size:1.05rem}
+.welcome p{margin:0;font-size:.9rem}
+dialog{border:0;border-radius:16px;padding:0;width:min(92vw,440px);max-height:88vh;background:var(--surface);color:var(--fg)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg{padding:16px;display:grid;gap:12px;overflow:auto;max-height:88vh;box-sizing:border-box}
+.dlg h3{margin:0;font-size:1.1rem}
+.dlg p{margin:0;font-size:.88rem}
+.qrbox{background:#fff;border-radius:12px;padding:10px;display:flex;justify-content:center}
+.qrbox svg{width:100%;max-width:340px;height:auto;display:block;shape-rendering:crispEdges}
+.qrnav{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:700}
+.cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:1/1;max-width:100%}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.prog{font-weight:700;color:var(--accent)}
+.sumlist{margin:0;padding-left:1.2em;font-size:.9rem}
+.dlg textarea{font:inherit;font-family:var(--mono);font-size:.75rem;width:100%;min-height:7em;box-sizing:border-box;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:8px}
+.opts{display:grid;gap:6px;font-size:.92rem}
+.opts label{display:flex;gap:8px;align-items:center}
+</style>
+
+<div class="wrap">
+  <h1 id="h1">業務予定</h1>
+  <p class="sub" id="today"></p>
+  <p class="status" id="status"></p>
+  <div class="meta">
+    <label>自分 <select id="mesel" aria-label="自分"></select></label>
+    <button type="button" class="btn primary" id="btn-share">QRで渡す</button>
+    <button type="button" class="btn" id="btn-scan">QRを読み取る</button>
+    <button type="button" class="btn" id="btn-more">その他</button>
+  </div>
+  <div id="welcome"></div>
+  <dialog id="dlg"><div class="dlg" id="dlgbody"></div></dialog>
+
+  <h2 id="ckh">今日のチェックリスト</h2>
+  <div id="today-ck"></div>
+
+  <h2>これからの業務</h2>
+  <ul class="up" id="up"></ul>
+
+  <h2>休みの入力</h2>
+  <div class="tabs" id="tabs"></div>
+  <div class="cal"><div class="grid" id="grid"></div></div>
+  <div class="ed" id="ed"></div>
+  <p class="note" id="note"></p>
+
+  <h2>毎週のタスク</h2>
+  <div class="set" id="tbody"></div>
+  <p class="note">曜日や担当業務、休み前の日を条件にタスクを登録できます。当てはまる日の「これからの業務」とカレンダーに表示されます。</p>
+
+  <h2>体制の設定</h2>
+  <details class="set" id="set"><summary>ローテーション・職員を編集する</summary><div id="setbody"></div></details>
+  <p class="note">体制は「いつから」を決めて追加します。それより前の日は前の体制のまま計算されるので、入力済みの休みや過去の業務は変わりません。</p>
+</div>
+
+<script>
+/* ---------- default rules (used until a custom setting is saved) ---------- */
+/* the published app is an empty container: people, days off and tasks arrive by QR and stay on this device */
+const BLANK_V={from:"2026-01-05",seq:[],special:["注射","打ち出し","ケモ"],rot:[],fixed:[],satOff:[]};
+const WARD={1:[4,5],2:[6,4],3:[5,6],4:[4,5],5:[6,4],6:[5,6]}; // weekday -> [I, II] floor
+const CIRC="①②③④⑤⑥⑦⑧⑨⑩";
+/* wards a fixed ward pharmacist holds, by floor; covered in this order when they are off */
+const WARDLBL={4:"4A",5:"5A",6:"6AB"};
+const wardOf=f=>WARDLBL[f]||(f+"階");
+const W="日月火水木金土", DAY=86400000;
+const clone=o=>JSON.parse(JSON.stringify(o));
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+const iso=d=>d.toISOString().slice(0,10);
+const fromIso=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(Date.UTC(y,m-1,d));};
+function jstToday(){
+  const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Tokyo",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+  return fromIso(p);
+}
+const fmt=d=>`${d.getUTCMonth()+1}/${d.getUTCDate()}（${W[d.getUTCDay()]}）`;
+const monday=d=>d.getTime()-((d.getUTCDay()+6)%7)*DAY;
+const mondayIso=s=>iso(new Date(monday(fromIso(s))));
+/* Japanese public holidays — treated as hospital closed unless the day is marked open */
+const HOLIDAYS={"2026-01-01":"元日","2026-01-12":"成人の日","2026-02-11":"建国記念の日","2026-02-23":"天皇誕生日","2026-03-20":"春分の日","2026-04-29":"昭和の日","2026-05-03":"憲法記念日","2026-05-04":"みどりの日","2026-05-05":"こどもの日","2026-05-06":"振替休日","2026-07-20":"海の日","2026-08-11":"山の日","2026-09-21":"敬老の日","2026-09-22":"国民の休日","2026-09-23":"秋分の日","2026-10-12":"スポーツの日","2026-11-03":"文化の日","2026-11-23":"勤労感謝の日",
+"2027-01-01":"元日","2027-01-11":"成人の日","2027-02-11":"建国記念の日","2027-02-23":"天皇誕生日","2027-03-22":"振替休日","2027-04-29":"昭和の日","2027-05-03":"憲法記念日","2027-05-04":"みどりの日","2027-05-05":"こどもの日","2027-07-19":"海の日","2027-08-11":"山の日","2027-09-20":"敬老の日","2027-09-23":"秋分の日","2027-10-11":"スポーツの日","2027-11-03":"文化の日","2027-11-23":"勤労感謝の日",
+"2028-01-01":"元日","2028-01-10":"成人の日","2028-02-11":"建国記念の日","2028-02-23":"天皇誕生日","2028-03-20":"春分の日","2028-04-29":"昭和の日","2028-05-03":"憲法記念日","2028-05-04":"みどりの日","2028-05-05":"こどもの日","2028-07-17":"海の日","2028-08-11":"山の日","2028-09-18":"敬老の日","2028-09-22":"秋分の日","2028-10-09":"スポーツの日","2028-11-03":"文化の日","2028-11-23":"勤労感謝の日"};
+
+/* ---------- state ---------- */
+let state={days:{}}, versions=[];
+let offLoaded=true, cfgLoaded=true;
+let ME=(()=>{try{return localStorage.getItem("gyomu-me")||"";}catch(e){return "";}})();
+let meta={roleNames:{},t:0};
+const LS="yz-shift-off", LSC="yz-shift-config";
+const t=jstToday();
+let sel=iso(t), month=[t.getUTCFullYear(),t.getUTCMonth()];
+
+function sorted(){return versions.slice().sort((a,b)=>a.from<b.from?-1:1);}
+function verFor(d){
+  if(!versions.length) return BLANK_V;
+  const k=iso(d), vs=sorted(); let v=vs[0];
+  vs.forEach(x=>{if(x.from<=k) v=x;});
+  return v;
+}
+const curV=()=>verFor(t);
+const names=v=>v.fixed.map(f=>f.name).concat(v.rot.map(r=>r.name));
+
+function dayInfo(d){
+  const v=verFor(d), e=state.days[iso(d)], dow=d.getUTCDay();
+  const hol=HOLIDAYS[iso(d)]||"";
+  const closed=dow===0||!!(e&&e.closed)||(!!hol&&!(e&&e.open));
+  const off=e?e.off.slice():(dow===6?v.satOff.slice():[]);
+  return {closed,off,v,hol};
+}
+/* how many days of work this business day covers (itself + following closed days) */
+function volume(d){
+  if(dayInfo(d).closed) return 0;
+  let n=1;
+  for(let i=1;i<21;i++){ if(dayInfo(new Date(d.getTime()+i*DAY)).closed) n++; else break; }
+  return n;
+}
+/* regular-prescription deadlines: a deadline on a closed day moves to the business day before;
+   the 定期打ち出し is the business day before that (moved) deadline */
+const isClosed=d=>dayInfo(d).closed;
+function prevBusiness(d){let x=d;for(let i=0;i<14&&isClosed(x);i++) x=new Date(x.getTime()-DAY);return x;}
+/* start = deadline + 2 days; when the start day and the day before are both closed, that cycle is
+   skipped and the previous one covers 2 weeks */
+const skipCycle=N=>isClosed(new Date(N.getTime()+2*DAY))&&isClosed(new Date(N.getTime()+DAY));
+function teikiHit(d,dl){
+  for(let k=0;k<=21;k++){
+    const N=new Date(d.getTime()+k*DAY); if(N.getUTCDay()!==dl||skipCycle(N)) continue;
+    const A=prevBusiness(N), U=prevBusiness(new Date(A.getTime()-DAY));
+    if(iso(U)===iso(d)) return {N,A,two:skipCycle(new Date(N.getTime()+7*DAY))};
+  }
+  return null;
+}
+const volTag=n=>n>=2?`<span class="vol${n>=3?" big":""}">${n}日分</span>`:"";
+let tasks=[], tLoaded=true;
+function tasksFor(d,a){
+  if(a.closed) return [];
+  const role=a.res[ME]||"";
+  if(!role||role==="休") return [];
+  const n=volume(d), k=iso(d), dow=d.getUTCDay();
+  const cv=(a.cover||{})[ME]||[];
+  return tasks.filter(tk=>{
+    const when=tk.when==="daily"?true:tk.when==="teiki"?(tk.dows||[]).some(dl=>teikiHit(d,dl)):tk.when==="weekly"?(tk.dows||[]).includes(dow):tk.when==="pre"?n>=3:tk.when==="date"?tk.date===k:false;
+    if(!when) return false;
+    if(!tk.job) return true;
+    if(tk.job==="フリー") return role.startsWith("フリー");
+    if(tk.job.startsWith("受け持ち:")) return cv.includes(tk.job.slice(5));
+    if(tk.job==="PHS") return role==="注射"||cv.length>0;
+    return role===tk.job;
+  }).sort((x,y)=>(x.time||"~").localeCompare(y.time||"~"));
+}
+const tkHtml=list=>list.length?`<ul class="tks">${list.map(tk=>`<li>${tk.time?`<b>${esc(tk.time)}</b>`:""}${esc(tk.name)}${isNew(tk)?`<span class="new">NEW</span>`:""}</li>`).join("")}</ul>`:"";
+/* checklist slots: explicit, else derived from the time */
+const SLOTS=["終日","始業時","午前","午後","終業前"];
+function slotOf(tk){
+  if(tk.slot&&SLOTS.includes(tk.slot)) return SLOTS.indexOf(tk.slot);
+  const m=/(\d{1,2})[:：]?(\d{2})?/.exec(tk.time||""); if(!m) return 1;
+  const h=+m[1]+(+(m[2]||0))/60;
+  return h<9?1:h<12?2:h<16?3:4;
+}
+/* a task added in the last 30 days is flagged NEW so it stands out against habit */
+const isNew=tk=>!!tk.added&&(t.getTime()-fromIso(tk.added).getTime())/DAY<=30;
+function checklistFor(d,a){
+  return tasksFor(d,a).slice().sort((x,y)=>slotOf(x)-slotOf(y)||(x.time||"~").localeCompare(y.time||"~"));
+}
+/* what is different from a normal day: role moved, new duties, heavy volume */
+function unusual(d,a){
+  if(a.closed) return [];
+  const me=ME, role=a.res[me]||"";
+  if(!role||role==="休") return [];
+  /* "normal" = what I would do if nobody were absent this week */
+  const usual=(assign(d,true).res||{})[me]||"";
+  const out=[], list=tasksFor(d,a);
+  const own=list.filter(tk=>tk.job&&!tk.job.startsWith("受け持ち:")&&tk.job!=="PHS").map(tk=>tk.name);
+  const cv=(a.cover||{})[me]||[];
+  if(cv.length){
+    const who=a.v.fixed.filter(f=>cv.includes(wardOf(f.floor))).map(f=>f.name).join("・");
+    const wt=list.filter(tk=>tk.job&&tk.job.startsWith("受け持ち:")).map(tk=>tk.name);
+    out.push({h:`${cv.join("・")}病棟を受け持つ日（${who}休み）`,s:wt.join("、")});
+  }
+  if(usual&&role!==usual&&(a.v.special.includes(role)||own.length)){
+    out.push({h:`担当が変わる日：いつもの${disp(usual)} → ${disp(role)}`,s:own.length?`${disp(role)}の業務：${own.join("、")}`:`${disp(role)}に入ります`});
+  }
+  const moved=[];
+  list.filter(tk=>tk.when==="teiki").forEach(tk=>(tk.dows||[]).forEach(dl=>{const h=teikiHit(d,dl); if(!h) return;
+    if(h.two) moved.push(`${tk.name}は連休前のため2週間分`);
+    if(iso(h.A)!==iso(h.N)) moved.push(`${tk.name}（締切 ${fmt(h.N)} → ${fmt(h.A)}）`);
+    else if(iso(d)!==iso(new Date(h.N.getTime()-DAY))) moved.push(`${tk.name}（休みのため打ち出しを前倒し。締切は${fmt(h.A)}）`);}));
+  if(moved.length) out.push({h:"定期が前倒しになる日",s:moved.join("、")});
+  const nw=list.filter(isNew).map(tk=>tk.name);
+  if(nw.length) out.push({h:"最近加わった業務があります",s:nw.join("、")});
+  const n=volume(d); if(n>=3) out.push({h:`${n}日分の業務量の日`,s:"休み前の分もまとめて準備します"});
+  return out.slice(0,3);
+}
+function assign(d,noOff){
+  const info0=dayInfo(d), info=noOff?Object.assign({},info0,{off:[]}):info0, v=info.v;
+  if(info.closed) return {closed:true,info,v};
+  const L=v.seq.length, wk=Math.round((monday(d)-monday(fromIso(v.from)))/(7*DAY));
+  const base={}, res={}, note={};
+  v.rot.forEach(r=>{const i=v.seq.indexOf(r.job); base[r.name]=i<0||!L?"":v.seq[((i+wk)%L+L)%L];});
+  const present=v.rot.map(r=>r.name).filter(p=>!info.off.includes(p));
+  const rank=j=>{const i=CIRC.indexOf(j);return i<0?99:i;};
+  const pool=present.filter(p=>!v.special.includes(base[p])).sort((a,b)=>rank(base[a])-rank(base[b]));
+  v.special.forEach(job=>{
+    const owner=v.rot.map(r=>r.name).find(p=>base[p]===job);
+    if(owner&&present.includes(owner)) res[owner]=job;
+    else if(pool.length){const p=pool.shift();res[p]=job;note[p]=base[p]?`${base[p]}から繰上げ`:"繰上げ";}
+  });
+  pool.forEach((p,i)=>res[p]="フリー"+(i+1));
+  /* absent ward pharmacists: their wards go to フリー1, then フリー2 … in 4A → 5A → 6AB order */
+  /* Saturday has no chemo work, so the ケモ person comes next after the free people ("フリー5") */
+  const cover={}, coverPool=pool.slice();
+  if(d.getUTCDay()===6){const k=v.rot.map(r=>r.name).find(p=>res[p]==="ケモ"); if(k) coverPool.push(k);}
+  v.fixed.filter(f=>f.floor&&info.off.includes(f.name)).sort((x,y)=>x.floor-y.floor).forEach((f,i)=>{
+    const w=wardOf(f.floor), p=coverPool[i];
+    if(p){(cover[p]=cover[p]||[]).push(w); note[f.name]=`${w}は${p}が受け持ち`;}
+    else note[f.name]=`${w}の受け持ちがいません`;
+  });
+  names(v).forEach(p=>{if(info.off.includes(p)) res[p]="休";});
+  const dow=d.getUTCDay(), w=WARD[dow];
+  v.fixed.forEach(f=>{if(res[f.name]!=="休"){
+    res[f.name]=f.floor?`${f.floor}階病棟`+(w&&+f.floor===w[0]?"（I）":w&&+f.floor===w[1]?"（II）":""):"病棟";}});
+  const extra=[], all=names(v), on=p=>all.includes(p)&&!info.off.includes(p);
+  return {closed:false,info,res,note,base,extra,v,cover};
+}
+/* at this workplace フリー1 and フリー2 have fixed jobs: show them by what they do */
+const RN=()=>meta.roleNames||{};
+const disp=r=>RN()[r]?`${RN()[r]}（${r}）`:r;
+const short=r=>!r?"":RN()[r]?RN()[r]:r==="休"?"休":r==="打ち出し"?"打出":r.startsWith("フリー")?"F"+r.slice(3):r.replace("病棟","").replace(/（.*）/,"");
+
+/* ---------- saving ---------- */
+function setStatus(s){document.getElementById("status").textContent=s;}
+/* ---------- local store: every record carries t (seconds) so copies from several people can be merged ---------- */
+const DKEY="gyomu-data-v1", CKEY="gyomu-checks-v1";
+let data={cfg:{},off:{},tasks:{},meta:{roleNames:{},t:0}};
+const now=()=>Math.floor(Date.now()/1000);
+const bare=o=>{const c=clone(o);delete c.t;return JSON.stringify(c);};
+function persist(){
+  try{localStorage.setItem(DKEY,JSON.stringify(data));return true;}
+  catch(e){setStatus("この端末に保存できませんでした。ブラウザの設定（プライベートモードなど）を確認してください");return false;}
+}
+function hydrate(){
+  versions=Object.values(data.cfg).filter(v=>!v.del).map(v=>{const c=clone(v);delete c.t;return c;});
+  state={days:{}}; Object.keys(data.off).forEach(k=>{if(!data.off[k].del) state.days[k]=clone(data.off[k]);});
+  tasks=Object.values(data.tasks).filter(x=>!x.del).map(x=>{const c=clone(x);delete c.t;return c;});
+  meta=data.meta||{roleNames:{},t:0};
+}
+function loadData(){
+  try{const x=JSON.parse(localStorage.getItem(DKEY)); if(x&&x.cfg) data=Object.assign({cfg:{},off:{},tasks:{},meta:{roleNames:{},t:0}},x);}catch(e){}
+  try{const c=JSON.parse(localStorage.getItem(CKEY)); if(c&&c.days) checks=c;}catch(e){}
+  hydrate();
+}
+/* write a keyed list back, stamping only what changed and leaving a tombstone for what was removed */
+function syncMap(map,list,keyOf){
+  const seen=new Set(), ts=now();
+  list.forEach(x=>{const k=keyOf(x); seen.add(k); const old=map[k];
+    if(!old||old.del||bare(old)!==bare(x)) map[k]=Object.assign(clone(x),{t:ts});});
+  Object.keys(map).forEach(k=>{if(!seen.has(k)&&!map[k].del) map[k]={del:true,t:ts};});
+}
+function scheduleSave(){
+  const ts=now();
+  Object.keys(state.days).forEach(k=>{const old=data.off[k], cur=state.days[k];
+    if(!old||bare(old)!==bare(cur)) data.off[k]=Object.assign(clone(cur),{t:ts});});
+  if(persist()) setStatus("保存しました");
+}
+async function saveConfig(){ syncMap(data.cfg,versions,v=>v.from); persist(); }
+
+/* ---------- render: main ---------- */
+function renderUp(){
+  const out=[];
+  for(let i=0;out.length<12&&i<40;i++){
+    const d=new Date(t.getTime()+i*DAY);
+    if(d.getUTCDay()===0) continue;
+    const a=assign(d), me=ME;
+    let role,why="",tag="";
+    if(a.closed){role="病院休み";}
+    else{role=a.res[me]||"—"; why=[a.note[me]||"",((a.cover||{})[me]||[]).length?a.cover[me].join("・")+"病棟を受け持ち":""].filter(Boolean).join("・"); const o=a.info.off.filter(p=>p!==me); if(o.length) tag="休 "+o.join(" ");}
+    if(a.closed&&a.info.hol) role="病院休み（"+a.info.hol+"）";
+    const off=a.closed||role==="休", vol=off?"":volTag(volume(d)), tl=tkHtml(tasksFor(d,a));
+    out.push(`<li class="${i===0?"today":""}"><span class="dt s${d.getUTCDay()}">${i===0?"今日 ":""}${fmt(d)}</span>
+      <span><span class="role${off?" off":""}">${esc(disp(role))}</span>${vol}${why?`<br><span class="why">${esc(why)}</span>`:""}${tl}</span>
+      ${tag?`<span class="tag">${esc(tag)}</span>`:"<span></span>"}</li>`);
+  }
+  document.getElementById("up").innerHTML=out.join("");
+}
+function renderTabs(){
+  const m0=[t.getUTCFullYear(),t.getUTCMonth()], m1=[m0[1]===11?m0[0]+1:m0[0],(m0[1]+1)%12];
+  document.getElementById("tabs").innerHTML=[m0,m1].map((m,i)=>
+    `<button type="button" id="tab${i}" data-m="${m[0]}-${m[1]}" aria-pressed="${m[0]===month[0]&&m[1]===month[1]}">${m[1]+1}月</button>`).join("");
+}
+function renderCal(){
+  const [y,m]=month, first=new Date(Date.UTC(y,m,1)), days=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  let h=W.split("").map((w,i)=>`<div class="dow s${i}">${w}</div>`).join("");
+  for(let i=0;i<first.getUTCDay();i++) h+=`<div class="day blank"></div>`;
+  for(let n=1;n<=days;n++){
+    const d=new Date(Date.UTC(y,m,n)), k=iso(d), a=assign(d), dow=d.getUTCDay(), me=ME;
+    const r=a.closed?"":short(a.res[me])+(((a.cover||{})[me]||[]).length?"+"+a.cover[me].join(""):"");
+    const offs=a.closed?(dow===0?"":"休診"):a.info.off.join(" ");
+    const nt=tasksFor(d,a).length, vn=a.closed?0:volume(d);
+    const cls=["day","s"+dow,k===sel?"sel":"",k===iso(t)?"today":"",d<t?"past":""].join(" ");
+    h+=`<button type="button" class="${cls}" id="c${k}" data-k="${k}" aria-label="${fmt(d)} ${a.closed?"休み":esc(a.res[me]||"")}">
+      <span class="d">${n}</span><span class="r${r==="休"?" off":""}">${esc(r)}</span><span class="o">${esc(offs)}</span>${a.info.hol?`<span class="hol">祝</span>`:""}${nt||vn>=3?`<span class="tdot">${vn>=3?vn+"日分":""}${nt?"●".repeat(Math.min(nt,3)):""}</span>`:""}</button>`;
+  }
+  document.getElementById("grid").innerHTML=h;
+}
+function renderEd(){
+  const d=fromIso(sel), a=assign(d), v=a.v, ed=document.getElementById("ed");
+  if(d.getUTCDay()===0){ed.innerHTML=`<h3>${fmt(d)}</h3><p class="hint">日曜は休みです。</p>`;return;}
+  const offSet=new Set(a.info.off), all=names(v);
+  const vn=a.closed?0:volume(d), tl=tasksFor(d,a);
+  let h=`<h3>${fmt(d)}の休み${a.info.hol?`<span class="why">（${esc(a.info.hol)}）</span>`:""}${vn>=2?volTag(vn):""}</h3>`+(tl.length?`<div><span class="hint">この日のタスク</span>${tkHtml(tl)}</div>`:"")+`
+    <div class="chips">${all.map(p=>`<button type="button" class="chip${p===ME?" me":""}" id="p${esc(p)}" data-p="${esc(p)}" aria-pressed="${offSet.has(p)}">${esc(p)}</button>`).join("")}</div>
+    <label class="closed"><input type="checkbox" id="closed" ${a.closed?"checked":""}> 病院休み${a.info.hol?"（祝日は自動で休み。出勤日ならチェックを外す）":"（祝日など）"}</label>`;
+  if(!a.closed){
+    const rows=v.rot.map(r=>r.name).concat(v.fixed.map(f=>f.name)).map(p=>`<tr class="${p===ME?"mine":""}"><td>${esc(p)}${a.note[p]?" ※":""}</td><td>${esc(disp(a.res[p]||"—"))}${a.note[p]?`<span class="why">（${esc(a.note[p])}）</span>`:""}</td></tr>`).join("");
+    h+=`<table class="asg"><tbody>${rows}</tbody></table>`;
+    if(a.extra.length) h+=`<p class="hint">${esc(a.extra.join("　"))}</p>`;
+  }
+  ed.innerHTML=h;
+}
+function renderNote(){
+  const v=curV();
+  document.getElementById("h1").textContent=ME?`${ME}の業務予定`:"業務予定";
+  document.getElementById("note").textContent=`日付をタップして、休みの人の名前をタップするだけで入力できます。土曜は${v.satOff.join("・")||"誰も"}が最初から休みになっています。担当が休みのときは、${v.special.join(" → ")}の順に、番号の若い人から埋めています。`;
+}
+let checks={days:{}}, ckLoaded=true;
+function prevWorkday(d){
+  for(let i=1;i<=10;i++){const x=new Date(d.getTime()-i*DAY), a=assign(x); if(!a.closed&&a.res[ME]&&a.res[ME]!=="休") return {d:x,a};}
+  return null;
+}
+function nextWorkday(d){
+  for(let i=1;i<=14;i++){const x=new Date(d.getTime()+i*DAY), a=assign(x); if(!a.closed&&a.res[ME]&&a.res[ME]!=="休") return {d:x,a};}
+  return null;
+}
+const ckItem=(k,tk,done)=>`<label class="${done?"done":""}"><input type="checkbox" data-day="${k}" data-id="${esc(tk.id)}" ${done?"checked":""}><span class="tx">${tk.time?`<span class="tm">${esc(tk.time)}</span>`:""}${esc(tk.name)}${isNew(tk)?`<span class="new">NEW</span>`:""}${tk.memo?`<span class="mm">${esc(tk.memo)}</span>`:""}</span></label>`;
+function renderToday(){
+  const box=document.getElementById("today-ck");
+  if(!versions.length||!ME||!names(curV()).includes(ME)){document.getElementById("ckh").textContent="今日のチェックリスト";box.innerHTML=`<p class="empty">データを取り込み、「自分」を選ぶと表示されます。</p>`;return;}
+  const a=assign(t), me=ME, role=a.res&&a.res[me];
+  const nx=nextWorkday(t);
+  let pre="";
+  if(nx){
+    const u=unusual(nx.d,nx.a);
+    if(u.length) pre=`<p class="pre">次の出勤日 <b>${fmt(nx.d)}</b>：${u.map(x=>`<b>${esc(x.h)}</b>${x.s?`（${esc(x.s)}）`:""}`).join("　")}</p>`;
+  }
+  if(a.closed||!role||role==="休"){
+    document.getElementById("ckh").textContent="今日のチェックリスト";
+    box.innerHTML=`<p class="empty">今日は${a.closed?"病院休み":"お休み"}です。</p>`+pre; return;
+  }
+  const k=iso(t), list=checklistFor(t,a), done=checks.days[k]||{};
+  const u=unusual(t,a);
+  let h=u.length?`<div class="alert"><b>今日いつもと違うこと</b>${u.map(x=>`<p>${esc(x.h)}${x.s?`<br><span>${esc(x.s)}</span>`:""}</p>`).join("")}</div>`:"";
+  /* all-day items run in the background, so "next" points at the next timed step */
+  const nextTk=list.find(tk=>!done[tk.id]&&slotOf(tk)!==0)||list.find(tk=>!done[tk.id]);
+  if(list.length){
+    h+=nextTk?`<div class="next"><div><div class="lbl">次にやること</div><div class="nm">${nextTk.time?esc(nextTk.time)+" ":""}${esc(nextTk.name)}</div></div><button type="button" id="donenext" data-day="${k}" data-id="${esc(nextTk.id)}">済み</button></div>`
+      :`<div class="done-all">今日のチェックはすべて済みました</div>`;
+    h+=`<div class="ck">`;
+    SLOTS.forEach((sl,i)=>{const g=list.filter(tk=>slotOf(tk)===i); if(g.length) h+=`<h3>${sl}</h3>`+g.map(tk=>ckItem(k,tk,!!done[tk.id])).join("");});
+    h+=`</div>`;
+  }else{
+    h+=`<p class="empty">今日の担当（${esc(disp(role))}）に登録されたタスクはありません。下の「毎週のタスク」から追加できます。</p>`;
+  }
+  const pv=prevWorkday(t);
+  if(pv){
+    const pk=iso(pv.d), pd=checks.days[pk];
+    if(pd){ const left=checklistFor(pv.d,pv.a).filter(tk=>!pd[tk.id]);
+      if(left.length) h+=`<div class="ck carry"><h3>${fmt(pv.d)}の未チェック</h3>${left.map(tk=>ckItem(pk,tk,false)).join("")}</div>`; }
+  }
+  document.getElementById("ckh").textContent=`今日のチェックリスト（${disp(role)}${((a.cover||{})[me]||[]).length?"＋"+a.cover[me].join("・"):""}）`;
+  box.innerHTML=h+pre;
+}
+async function setCheck(day,id,val){
+  const prev=clone(checks);
+  checks.days[day]=Object.assign({},checks.days[day]||{},{[id]:val});
+  const cut=iso(new Date(t.getTime()-60*DAY));
+  Object.keys(checks.days).forEach(k=>{if(k<cut) delete checks.days[k];});
+  renderToday();
+  try{ localStorage.setItem(CKEY,JSON.stringify(checks)); }
+  catch(e){checks=prev;renderToday();setStatus("チェックを保存できませんでした。通信状態を確認してください");}
+}
+document.getElementById("today-ck").addEventListener("change",e=>{
+  const c=e.target; if(c.type!=="checkbox"||!c.dataset.id) return;
+  setCheck(c.dataset.day,c.dataset.id,c.checked);
+});
+document.getElementById("today-ck").addEventListener("click",e=>{
+  const b=e.target.closest("#donenext"); if(!b) return;
+  setCheck(b.dataset.day,b.dataset.id,true);
+});
+function renderAll(){renderMe();renderWelcome();renderNote();renderToday();renderUp();renderTabs();renderCal();renderEd();}
+
+/* ---------- render: settings ---------- */
+let draft=null, draftIdx=-1, confirmDel=false, formErr="";
+function renderSet(){
+  const box=document.getElementById("setbody");
+  if(!draft){
+    const vs=sorted(), cur=curV();
+    box.innerHTML=`<div class="vlist">${vs.map(v=>{
+      const i=versions.indexOf(v), d=fromIso(v.from);
+      return `<button type="button" class="vbtn" id="v${i}" data-i="${i}"><b>${d.getUTCFullYear()}/${fmt(d)}〜</b>${v===cur?"（今の体制）":""}<br><span class="why">${v.rot.length+v.fixed.length}人・業務${v.seq.length}種類・${esc(v.rot.map(r=>r.name).join(" "))}</span></button>`;}).join("")}</div>
+      <div class="acts"><button type="button" class="btn primary" id="addv">新しい体制を追加</button></div>
+      <div class="form"><label class="fld"><span>担当の呼び名（例：フリー1=調剤、フリー2=監査）</span><input type="text" id="f-rn" value="${esc(Object.entries(RN()).map(([a,b])=>a+"="+b).join("、"))}"></label>
+      <div class="acts"><button type="button" class="btn" id="savern">呼び名を保存</button></div></div>`;
+    return;
+  }
+  const v=draft, all=names(v);
+  const jobOpts=sel=>`<option value="">（なし）</option>`+v.seq.map(j=>`<option ${j===sel?"selected":""}>${esc(j)}</option>`).join("");
+  const flOpts=sel=>`<option value="">（なし）</option>`+[3,4,5,6,7,8].map(f=>`<option value="${f}" ${+sel===f?"selected":""}>${f}階</option>`).join("");
+  box.innerHTML=`<div class="form">
+    <label class="fld"><span>いつから（その週の月曜から切り替わります）</span><input type="date" id="f-from" value="${v.from}"></label>
+    <label class="fld"><span>業務の順番（毎週この順に1つずつ進みます。「、」で区切る）</span><input type="text" id="f-seq" value="${esc(v.seq.join("、"))}"></label>
+    <label class="fld"><span>休みのとき先に埋める業務（埋める順）</span><input type="text" id="f-special" value="${esc(v.special.join("、"))}"></label>
+    <div class="fld"><span>ローテーションの人と、開始週の担当</span>
+      <div class="rows">${v.rot.map((r,i)=>`<div class="row"><input type="text" id="rn${i}" data-k="rot" data-i="${i}" value="${esc(r.name)}" aria-label="名前"><select id="rj${i}" data-k="rotj" data-i="${i}" aria-label="開始週の担当">${jobOpts(r.job)}</select><button type="button" class="x" data-del="rot" data-i="${i}">削除</button></div>`).join("")}</div>
+      <div class="acts"><button type="button" class="btn" id="addrot">＋ 人を追加</button></div></div>
+    <div class="fld"><span>病棟担当の人と担当階（I・IIの判定に使います）</span>
+      <div class="rows">${v.fixed.map((f,i)=>`<div class="row"><input type="text" id="fn${i}" data-k="fix" data-i="${i}" value="${esc(f.name)}" aria-label="名前"><select id="ff${i}" data-k="fixf" data-i="${i}" aria-label="担当階">${flOpts(f.floor)}</select><button type="button" class="x" data-del="fix" data-i="${i}">削除</button></div>`).join("")}</div>
+      <div class="acts"><button type="button" class="btn" id="addfix">＋ 人を追加</button></div></div>
+    <div class="fld"><span>土曜が最初から休みの人</span>
+      <div class="chips small">${all.map(p=>`<button type="button" class="chip" data-sat="${esc(p)}" aria-pressed="${v.satOff.includes(p)}">${esc(p)}</button>`).join("")}</div></div>
+    ${formErr?`<p class="err">${esc(formErr)}</p>`:""}
+    <div class="acts"><button type="button" class="btn primary" id="savev">保存</button><button type="button" class="btn" id="cancelv">やめる</button>
+      ${draftIdx>=0&&versions.length>1?(confirmDel?`<button type="button" class="btn danger" id="delv2">本当に削除する</button>`:`<button type="button" class="btn danger" id="delv">この体制を削除</button>`):""}</div>
+  </div>`;
+}
+const splitList=s=>s.split(/[、,，\s]+/).map(x=>x.trim()).filter(Boolean);
+function syncDraft(){
+  if(!draft) return;
+  const q=id=>document.getElementById(id);
+  if(q("f-from")&&q("f-from").value) draft.from=q("f-from").value;
+  if(q("f-seq")) draft.seq=splitList(q("f-seq").value);
+  if(q("f-special")) draft.special=splitList(q("f-special").value);
+  draft.rot.forEach((r,i)=>{if(q("rn"+i)) r.name=q("rn"+i).value.trim(); if(q("rj"+i)) r.job=q("rj"+i).value;});
+  draft.fixed.forEach((f,i)=>{if(q("fn"+i)) f.name=q("fn"+i).value.trim(); if(q("ff"+i)) f.floor=q("ff"+i).value?+q("ff"+i).value:null;});
+}
+function validate(v){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v.from)) return "「いつから」の日付を入れてください";
+  if(!v.seq.length) return "業務の順番を入れてください";
+  const all=names(v);
+  if(all.some(n=>!n)) return "名前が空の行があります。入力するか、行を削除してください";
+  const dup=all.find((n,i)=>all.indexOf(n)!==i); if(dup) return `「${dup}」が2回入っています`;
+  const jobs=v.rot.map(r=>r.job).filter(Boolean), dj=jobs.find((j,i)=>jobs.indexOf(j)!==i);
+  if(dj) return `開始週の担当「${dj}」が2人に割り当てられています`;
+  const others=versions.filter((x,i)=>i!==draftIdx);
+  if(others.some(x=>x.from===v.from)) return "同じ開始週の体制がすでにあります。その体制を編集してください";
+  return "";
+}
+document.getElementById("setbody").addEventListener("click",async e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.i!==undefined&&b.classList.contains("vbtn")){draftIdx=+b.dataset.i;draft=clone(versions[draftIdx]);formErr="";confirmDel=false;renderSet();return;}
+  if(b.id==="savern"){
+    const rn={}; splitList(document.getElementById("f-rn").value).forEach(p=>{const m=p.split("=");if(m.length===2&&m[0]&&m[1]) rn[m[0].trim()]=m[1].trim();});
+    meta={roleNames:rn,t:now()}; data.meta=meta; persist(); setStatus("呼び名を保存しました"); renderSet(); renderAll(); return;
+  }
+  if(b.id==="addv"){
+    const c=clone(curV()); const nm=new Date(monday(t)+(versions.length?7:0)*DAY);
+    // carry each person's job forward to the new start week so nothing jumps
+    const wk=Math.round((nm.getTime()-monday(fromIso(c.from)))/(7*DAY)), L=c.seq.length;
+    c.rot.forEach(r=>{const i=c.seq.indexOf(r.job); if(i>=0&&L) r.job=c.seq[((i+wk)%L+L)%L];});
+    c.from=iso(nm); draft=c; draftIdx=-1; formErr=""; confirmDel=false; renderSet(); return;
+  }
+  syncDraft();
+  if(b.dataset.sat){const p=b.dataset.sat;draft.satOff=draft.satOff.includes(p)?draft.satOff.filter(x=>x!==p):draft.satOff.concat(p);renderSet();return;}
+  if(b.dataset.del==="rot"){draft.rot.splice(+b.dataset.i,1);renderSet();return;}
+  if(b.dataset.del==="fix"){draft.fixed.splice(+b.dataset.i,1);renderSet();return;}
+  if(b.id==="addrot"){draft.rot.push({name:"",job:""});renderSet();return;}
+  if(b.id==="addfix"){draft.fixed.push({name:"",floor:null});renderSet();return;}
+  if(b.id==="cancelv"){draft=null;renderSet();return;}
+  if(b.id==="delv"){confirmDel=true;renderSet();return;}
+  if(b.id==="delv2"){
+    const prev=clone(versions); versions.splice(draftIdx,1);
+    try{await saveConfig();draft=null;setStatus("体制を削除しました");}catch(err){versions=prev;formErr="削除できませんでした。通信状態を確認してください";}
+    renderSet();renderAll();return;
+  }
+  if(b.id==="savev"){
+    draft.from=mondayIso(draft.from);
+    draft.satOff=draft.satOff.filter(p=>names(draft).includes(p));
+    draft.rot.forEach(r=>{if(!draft.seq.includes(r.job)) r.job="";});
+    formErr=validate(draft); if(formErr){renderSet();return;}
+    const prev=clone(versions);
+    if(draftIdx>=0) versions[draftIdx]=clone(draft); else versions.push(clone(draft));
+    try{await saveConfig();draft=null;setStatus("体制を保存しました");}catch(err){versions=prev;formErr="保存できませんでした。通信状態を確認してください";}
+    renderSet();renderAll();
+  }
+});
+document.getElementById("setbody").addEventListener("change",e=>{
+  if(!draft) return;
+  syncDraft();
+  if(e.target.id==="f-seq"||e.target.dataset.k==="rot"||e.target.dataset.k==="fix") renderSet();
+});
+
+/* ---------- tasks editor ---------- */
+let tdraft=null, tIdx=-1, tErr="", tDel=false;
+const WHEN={daily:"毎日",weekly:"曜日を選ぶ",teiki:"定期打ち出し（締切の前の営業日）",pre:"休み前の日（3日分以上）",date:"日付を指定"};
+function jobChoices(){return [""].concat(curV().seq,["フリー","フリー1","フリー2","フリー3","フリー4"],curV().fixed.filter(f=>f.floor).map(f=>"受け持ち:"+wardOf(f.floor)),["PHS"]);}
+function whenText(tk){
+  if(tk.when==="daily") return "毎日";
+  if(tk.when==="teiki") return "定期打ち出し（締切 "+(tk.dows||[]).slice().sort().map(i=>W[i]).join("・")+"曜の前の営業日）";
+  if(tk.when==="weekly") return "毎週 "+(tk.dows||[]).slice().sort().map(i=>W[i]).join("・");
+  if(tk.when==="pre") return "休み前の日（3日分以上）";
+  if(tk.when==="date"&&tk.date){const d=fromIso(tk.date);return fmt(d)+"だけ";}
+  return "";
+}
+function renderTasks(){
+  const box=document.getElementById("tbody");
+  if(!tdraft){
+    box.innerHTML=(tasks.length?`<div class="tlist">${tasks.map((tk,i)=>`<button type="button" class="vbtn" id="tk${i}" data-ti="${i}"><b>${tk.time?esc(tk.time)+" ":""}${esc(tk.name)}${isNew(tk)?`<span class="new">NEW</span>`:""}</b><span class="why">${esc(whenText(tk))}・${esc(SLOTS[slotOf(tk)])}・${tk.job?esc(disp(tk.job))+"の日":"担当に関係なく"}${tk.memo?"・"+esc(tk.memo):""}</span></button>`).join("")}</div>`
+      :`<p class="empty">まだタスクはありません。</p>`)+`<div class="acts"><button type="button" class="btn primary" id="addt">＋ タスクを追加</button></div>`;
+    return;
+  }
+  const v=tdraft;
+  box.innerHTML=`<div class="form">
+    <label class="fld"><span>タスク名</span><input type="text" id="t-name" value="${esc(v.name)}" placeholder="例：定期処方の締切"></label>
+    <label class="fld"><span>区切り（チェックリストのどこに入れるか）</span><select id="t-slot"><option value="">時刻から自動</option>${SLOTS.map(x=>`<option ${v.slot===x?"selected":""}>${x}</option>`).join("")}</select></label>
+    <label class="fld"><span>時刻・締切（なくてもよい）</span><input type="text" id="t-time" value="${esc(v.time||"")}" placeholder="例：10:00まで"></label>
+    <div class="fld"><span>いつ</span><div class="radios">${Object.keys(WHEN).map(k=>`<label><input type="radio" name="t-when" id="tw-${k}" value="${k}" ${v.when===k?"checked":""}>${WHEN[k]}</label>`).join("")}</div></div>
+    ${v.when==="weekly"||v.when==="teiki"?`<div class="fld"><span>${v.when==="teiki"?"定期の締切の曜日（締切が休みなら前の営業日にずれ、打ち出しはその前の営業日）":"曜日"}</span><div class="chips dows">${[1,2,3,4,5,6].map(i=>`<button type="button" class="chip" data-dow="${i}" aria-pressed="${(v.dows||[]).includes(i)}">${W[i]}</button>`).join("")}</div></div>`:""}
+    ${v.when==="date"?`<label class="fld"><span>日付</span><input type="date" id="t-date" value="${esc(v.date||"")}"></label>`:""}
+    ${v.when==="pre"?`<p class="hint">病院休みの前で、3日分以上の業務になる日に表示します（祝日の前の土曜など）。</p>`:""}
+    <label class="fld"><span>自分の担当がこの業務の日だけ</span><select id="t-job">${jobChoices().map(j=>`<option value="${esc(j)}" ${j===(v.job||"")?"selected":""}>${j?esc(j==="PHS"?"PHS（注射の日・病棟を受け持つ日）":j.startsWith("受け持ち:")?j.slice(5)+"病棟を受け持つ日":disp(j)):"担当に関係なく表示"}</option>`).join("")}</select></label>
+    <label class="fld"><span>メモ（なくてもよい）</span><input type="text" id="t-memo" value="${esc(v.memo||"")}"></label>
+    ${tErr?`<p class="err">${esc(tErr)}</p>`:""}
+    <div class="acts"><button type="button" class="btn primary" id="savet">保存</button><button type="button" class="btn" id="cancelt">やめる</button>
+      ${tIdx>=0?(tDel?`<button type="button" class="btn danger" id="delt2">本当に削除する</button>`:`<button type="button" class="btn danger" id="delt">このタスクを削除</button>`):""}</div>
+  </div>`;
+}
+function syncT(){
+  if(!tdraft) return;
+  const q=id=>document.getElementById(id);
+  if(q("t-name")) tdraft.name=q("t-name").value.trim();
+  if(q("t-time")) tdraft.time=q("t-time").value.trim();
+  if(q("t-date")) tdraft.date=q("t-date").value;
+  if(q("t-job")) tdraft.job=q("t-job").value;
+  if(q("t-memo")) tdraft.memo=q("t-memo").value.trim();
+  if(q("t-slot")) tdraft.slot=q("t-slot").value;
+  const w=document.querySelector('input[name="t-when"]:checked'); if(w) tdraft.when=w.value;
+}
+async function saveTasks(){ syncMap(data.tasks,tasks,x=>x.id); persist(); }
+document.getElementById("tbody").addEventListener("click",async e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.dataset.ti!==undefined){tIdx=+b.dataset.ti;tdraft=clone(tasks[tIdx]);tErr="";tDel=false;renderTasks();return;}
+  if(b.id==="addt"){tdraft={id:"t"+Date.now().toString(36),name:"",time:"",when:"daily",dows:[],date:"",job:"",memo:"",slot:"",added:iso(t)};tIdx=-1;tErr="";tDel=false;renderTasks();return;}
+  syncT();
+  if(b.dataset.dow){const i=+b.dataset.dow;tdraft.dows=(tdraft.dows||[]).includes(i)?tdraft.dows.filter(x=>x!==i):(tdraft.dows||[]).concat(i);renderTasks();return;}
+  if(b.id==="cancelt"){tdraft=null;renderTasks();return;}
+  if(b.id==="delt"){tDel=true;renderTasks();return;}
+  const commit=async(next,msg)=>{
+    const prev=clone(tasks); tasks=next;
+    try{await saveTasks();tdraft=null;setStatus(msg);}catch(err){tasks=prev;tErr="保存できませんでした。通信状態を確認してください";}
+    renderTasks();renderAll();
+  };
+  if(b.id==="delt2"){const n=clone(tasks);n.splice(tIdx,1);await commit(n,"タスクを削除しました");return;}
+  if(b.id==="savet"){
+    tErr=!tdraft.name?"タスク名を入れてください":(tdraft.when==="weekly"||tdraft.when==="teiki")&&!(tdraft.dows||[]).length?"曜日を1つ以上選んでください":tdraft.when==="date"&&!tdraft.date?"日付を入れてください":"";
+    if(tErr){renderTasks();return;}
+    const n=clone(tasks); if(tIdx>=0) n[tIdx]=clone(tdraft); else n.push(clone(tdraft));
+    await commit(n,"タスクを保存しました");
+  }
+});
+document.getElementById("tbody").addEventListener("change",e=>{
+  if(!tdraft) return; syncT(); if(e.target.name==="t-when") renderTasks();
+});
+
+/* ---------- events: main ---------- */
+document.getElementById("tabs").addEventListener("click",e=>{
+  const b=e.target.closest("button");if(!b)return;
+  month=b.dataset.m.split("-").map(Number);renderTabs();renderCal();
+});
+document.getElementById("grid").addEventListener("click",e=>{
+  const b=e.target.closest(".day");if(!b||!b.dataset.k)return;
+  sel=b.dataset.k;renderCal();renderEd();
+});
+document.getElementById("ed").addEventListener("click",e=>{
+  const b=e.target.closest(".chip");if(!b)return;
+  if(!offLoaded){setStatus("休みのデータを読み込み中です。読み込みが終わってから入力してください");return;}
+  const info=dayInfo(fromIso(sel)), p=b.dataset.p;
+  const off=info.off.includes(p)?info.off.filter(x=>x!==p):info.off.concat(p);
+  const prevRec=state.days[sel]||{};
+  state.days[sel]=Object.assign({off,closed:!!prevRec.closed},prevRec.open?{open:true}:{});
+  renderAll();scheduleSave();
+});
+document.getElementById("ed").addEventListener("change",e=>{
+  if(e.target.id!=="closed")return;
+  if(!offLoaded){e.target.checked=!e.target.checked;setStatus("休みのデータを読み込み中です。読み込みが終わってから入力してください");return;}
+  const info=dayInfo(fromIso(sel));
+  const rec={off:info.off,closed:e.target.checked};
+  if(info.hol&&!e.target.checked) rec.open=true;
+  state.days[sel]=rec;
+  renderAll();scheduleSave();
+});
+
+document.getElementById("today").textContent=`今日：${t.getUTCFullYear()}年${fmt(t)}`;
+
+/* ---------- me selector & first-run guide ---------- */
+function renderMe(){
+  const all=names(curV()), el=document.getElementById("mesel");
+  el.innerHTML=(ME&&all.includes(ME)?"":`<option value="">選んでください</option>`)+all.map(p=>`<option ${p===ME?"selected":""}>${esc(p)}</option>`).join("");
+}
+document.getElementById("mesel").addEventListener("change",e=>{
+  ME=e.target.value; try{localStorage.setItem("gyomu-me",ME);}catch(x){}
+  renderAll();
+});
+function renderWelcome(){
+  const w=document.getElementById("welcome");
+  if(versions.length){
+    w.innerHTML=ME&&names(curV()).includes(ME)?"":`<div class="welcome"><h3>自分を選んでください</h3><p>上の「自分」から名前を選ぶと、その人の業務とチェックリストが出ます。この選択はこの端末だけのものです。</p></div>`;
+    return;
+  }
+  w.innerHTML=`<div class="welcome"><h3>はじめに</h3>
+    <p>このアプリには最初、データが入っていません。同じ職場の人のアプリで「QRで渡す」を開いてもらい、こちらの「QRを読み取る」で取り込んでください。</p>
+    <p>データはこの端末の中にだけ保存されます。インターネット上には送られません。</p>
+    <div class="acts"><button type="button" class="btn primary" data-act="scan">QRを読み取る</button><button type="button" class="btn" data-act="paste">コードを貼り付ける</button></div></div>`;
+}
+document.getElementById("welcome").addEventListener("click",e=>{
+  const b=e.target.closest("[data-act]"); if(!b) return;
+  if(b.dataset.act==="scan") openScan(); else openPaste();
+});
+
+/* ---------- payload: JSON → deflate → base45 (QR alphanumeric mode) ---------- */
+const B45="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+function b45enc(u8){
+  let o="";
+  for(let i=0;i<u8.length;i+=2){
+    if(i+1<u8.length){const n=u8[i]*256+u8[i+1];o+=B45[n%45]+B45[Math.floor(n/45)%45]+B45[Math.floor(n/2025)];}
+    else{const n=u8[i];o+=B45[n%45]+B45[Math.floor(n/45)];}
+  }
+  return o;
+}
+function b45dec(str){
+  const out=[];
+  for(let i=0;i<str.length;i+=3){
+    const c=str.slice(i,i+3).split("").map(ch=>{const v=B45.indexOf(ch);if(v<0) throw new Error("bad char");return v;});
+    if(c.length===3){const n=c[0]+c[1]*45+c[2]*2025;if(n>65535) throw new Error("bad");out.push(n>>8,n&255);}
+    else if(c.length===2){const n=c[0]+c[1]*45;if(n>255) throw new Error("bad");out.push(n);}
+    else throw new Error("bad length");
+  }
+  return new Uint8Array(out);
+}
+async function pipe(u8,stream){return new Uint8Array(await new Response(new Blob([u8]).stream().pipeThrough(stream)).arrayBuffer());}
+async function encodePayload(obj){
+  const raw=new TextEncoder().encode(JSON.stringify(obj));
+  if(window.CompressionStream){try{return "Z"+b45enc(await pipe(raw,new CompressionStream("deflate-raw")));}catch(e){}}
+  return "R"+b45enc(raw);
+}
+async function decodePayload(str){
+  const u8=b45dec(str.slice(1));
+  const raw=str[0]==="Z"?await pipe(u8,new DecompressionStream("deflate-raw")):u8;
+  return JSON.parse(new TextDecoder().decode(raw));
+}
+const CHUNK=500;
+function frames(code){
+  const id=Math.floor(Math.random()*1679616).toString(36).toUpperCase().padStart(4,"0");
+  const parts=[]; for(let i=0;i<code.length;i+=CHUNK) parts.push(code.slice(i,i+CHUNK));
+  return parts.map((p,i)=>`GY1:${id}:${i+1}:${parts.length}:${p}`);
+}
+function buildPayload(opt){
+  const o={v:1};
+  if(opt.cfg){o.c=data.cfg;o.m=data.meta;}
+  if(opt.tasks) o.k=data.tasks;
+  if(opt.off){
+    const from=opt.range==="all"?"":iso(new Date(t.getTime()-31*DAY)), off={};
+    Object.keys(data.off).forEach(k=>{if(k>=from) off[k]=data.off[k];});
+    o.o=off;
+  }
+  return o;
+}
+function qrSvg(text){
+  const q=qrcode(0,"L"); q.addData(text,"Alphanumeric"); q.make();
+  return q.createSvgTag({cellSize:4,margin:4,scalable:true});
+}
+
+/* ---------- dialog ---------- */
+const dlg=document.getElementById("dlg"), dbody=document.getElementById("dlgbody");
+let shareTimer=null, stream=null, scanTimer=null, collect=null;
+function closeDlg(){clearInterval(shareTimer);shareTimer=null;stopCam();if(dlg.open) dlg.close();}
+dlg.addEventListener("close",()=>{clearInterval(shareTimer);stopCam();});
+function openDlg(html){dbody.innerHTML=html; if(!dlg.open) dlg.showModal();}
+
+/* share */
+function openShare(){
+  if(!versions.length&&!tasks.length){openDlg(`<h3>QRで渡す</h3><p>まだ渡せるデータがありません。先にQRを読み取るか、体制の設定から始めてください。</p><div class="acts"><button type="button" class="btn" data-x="close">閉じる</button></div>`);return;}
+  openDlg(`<h3>QRで渡す</h3><p>渡す内容を選んでください。相手のアプリでは、新しい内容だけが取り込まれます。</p>
+    <div class="opts">
+      <label><input type="checkbox" id="o-cfg" checked> 体制（人・ローテーション・呼び名）</label>
+      <label><input type="checkbox" id="o-tasks" checked> タスク</label>
+      <label><input type="checkbox" id="o-off" checked> 休み</label>
+      <label style="padding-left:1.6em"><select id="o-range"><option value="recent">過去1か月と今後</option><option value="all">すべて</option></select></label>
+    </div>
+    <div class="acts"><button type="button" class="btn primary" data-x="make">QRを表示</button><button type="button" class="btn" data-x="close">閉じる</button></div>`);
+}
+async function showShare(){
+  const opt={cfg:document.getElementById("o-cfg").checked,tasks:document.getElementById("o-tasks").checked,off:document.getElementById("o-off").checked,range:document.getElementById("o-range").value};
+  if(!opt.cfg&&!opt.tasks&&!opt.off) return;
+  const fr=frames(await encodePayload(buildPayload(opt))); let i=0;
+  const draw=()=>{dbody.querySelector(".qrbox").innerHTML=qrSvg(fr[i]);dbody.querySelector("#qri").textContent=fr.length>1?`${i+1} / ${fr.length}`:"";};
+  openDlg(`<h3>QRで渡す</h3><p>${fr.length>1?`QRが${fr.length}枚あり、自動で切り替わります（1.6秒ごと）。相手は全部そろうまで続けて読み取ってください。`:"相手のアプリの「QRを読み取る」で、このQRを読み取ってもらってください。"}</p>
+    <div class="qrbox"></div>
+    <div class="qrnav">${fr.length>1?`<button type="button" class="btn" data-x="prev">◀</button><span id="qri"></span><button type="button" class="btn" data-x="next">▶</button>`:`<span id="qri"></span>`}</div>
+    <div class="acts"><button type="button" class="btn" data-x="close">閉じる</button></div>`);
+  draw();
+  dbody._fr={fr,step:d=>{i=(i+d+fr.length)%fr.length;draw();}};
+  clearInterval(shareTimer); if(fr.length>1) shareTimer=setInterval(()=>dbody._fr.step(1),1600);
+}
+
+/* scan */
+function newCollect(){collect={id:null,n:0,parts:{}};}
+function onCode(txt){
+  const m=/^GY1:([0-9A-Z]+):(\d+):(\d+):([\s\S]*)$/.exec((txt||"").trim());
+  const pr=dbody.querySelector("#prog");
+  if(!m){if(pr) pr.textContent="このQRは業務予定のものではありません";return false;}
+  if(collect.id!==m[1]) collect={id:m[1],n:+m[3],parts:{}};
+  collect.parts[m[2]]=m[4];
+  const got=Object.keys(collect.parts).length;
+  if(pr) pr.textContent=collect.n>1?`${got} / ${collect.n} 枚 読み取り済み`:"読み取りました";
+  if(got>=collect.n){
+    stopCam();
+    let code=""; for(let i=1;i<=collect.n;i++) code+=collect.parts[i];
+    preview(code); return true;
+  }
+  return false;
+}
+function openScan(){
+  newCollect();
+  openDlg(`<h3>QRを読み取る</h3><p>相手の画面のQRにカメラを向けてください。</p>
+    <div class="cam"><video id="vid" playsinline muted></video></div>
+    <p class="prog" id="prog">カメラを準備しています…</p>
+    <div class="acts"><label class="btn">写真から読み取る<input type="file" id="photo" accept="image/*" hidden></label><button type="button" class="btn" data-x="close">やめる</button></div>`);
+  startCam();
+}
+async function startCam(){
+  const v=dbody.querySelector("#vid"), pr=dbody.querySelector("#prog");
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"},audio:false});
+    v.srcObject=stream; await v.play(); pr.textContent="読み取り中…"; tick(v);
+  }catch(e){pr.textContent="カメラを使えません。「写真から読み取る」でQRの写真を選んでください。";}
+}
+const cv2=document.createElement("canvas"), cx2=cv2.getContext("2d",{willReadFrequently:true});
+function decodeFrom(src,w,h){
+  const s=Math.min(1,900/Math.max(w,h)); cv2.width=Math.round(w*s); cv2.height=Math.round(h*s);
+  cx2.drawImage(src,0,0,cv2.width,cv2.height);
+  const img=cx2.getImageData(0,0,cv2.width,cv2.height);
+  return jsQR(img.data,img.width,img.height,{inversionAttempts:"attemptBoth"});
+}
+function tick(v){
+  if(!stream) return;
+  if(v.readyState>=2&&v.videoWidth){const c=decodeFrom(v,v.videoWidth,v.videoHeight); if(c&&onCode(c.data)) return;}
+  scanTimer=setTimeout(()=>tick(v),160);
+}
+function stopCam(){clearTimeout(scanTimer); if(stream){stream.getTracks().forEach(x=>x.stop()); stream=null;}}
+dbody.addEventListener("change",e=>{
+  if(e.target.id!=="photo"||!e.target.files[0]) return;
+  const img=new Image(), url=URL.createObjectURL(e.target.files[0]);
+  img.onload=()=>{const c=decodeFrom(img,img.naturalWidth,img.naturalHeight); URL.revokeObjectURL(url);
+    if(c) onCode(c.data); else dbody.querySelector("#prog").textContent="写真からQRが見つかりませんでした。QRが大きく写った写真を選んでください。";};
+  img.src=url; e.target.value="";
+});
+
+/* paste / copy */
+function openPaste(){
+  newCollect();
+  openDlg(`<h3>コードを貼り付ける</h3><p>受け取ったコード（GY1: で始まる文字）を貼り付けてください。</p>
+    <textarea id="pastebox" aria-label="コード"></textarea><p class="prog" id="prog"></p>
+    <div class="acts"><button type="button" class="btn primary" data-x="pastego">取り込む</button><button type="button" class="btn" data-x="close">やめる</button></div>`);
+}
+let copyCode="";
+async function openMore(){
+  openDlg(`<h3>その他</h3>
+    <div class="opts">
+      <button type="button" class="btn" data-x="copy" id="copybtn" disabled>全データをコードでコピー（準備中…）</button>
+      <button type="button" class="btn" data-x="paste">コードを貼り付けて取り込む</button>
+      <button type="button" class="btn danger" data-x="wipe">この端末のデータを消す</button>
+    </div>
+    <p id="moremsg"></p><textarea id="copybox" hidden aria-label="コピー用コード"></textarea>
+    <div class="acts"><button type="button" class="btn" data-x="close">閉じる</button></div>`);
+  copyCode="GY1:PAST:1:1:"+(await encodePayload(buildPayload({cfg:true,tasks:true,off:true,range:"all"})));
+  const b=dbody.querySelector("#copybtn"); if(b){b.disabled=false;b.textContent="全データをコードでコピー";}
+}
+
+/* preview & merge: newer record wins, ties keep what is here */
+function plan(inc){
+  const r={cfg:0,off:0,tAdd:0,tChg:0,tDel:0,meta:false};
+  const walk=(map,mine,fn)=>Object.keys(map||{}).forEach(k=>{const v=map[k],cur=mine[k]; if(!cur||(v.t||0)>(cur.t||0)) fn(k,v,cur);});
+  walk(inc.c,data.cfg,()=>r.cfg++);
+  walk(inc.o,data.off,()=>r.off++);
+  walk(inc.k,data.tasks,(k,v,cur)=>{ if(v.del){ if(cur&&!cur.del) r.tDel++; } else if(!cur||cur.del) r.tAdd++; else r.tChg++; });
+  if(inc.m&&(inc.m.t||0)>(data.meta.t||0)) r.meta=true;
+  return r;
+}
+function apply(inc){
+  const take=(map,mine)=>Object.keys(map||{}).forEach(k=>{const v=map[k],cur=mine[k]; if(!cur||(v.t||0)>(cur.t||0)) mine[k]=v;});
+  take(inc.c,data.cfg); take(inc.o,data.off); take(inc.k,data.tasks);
+  if(inc.m&&(inc.m.t||0)>(data.meta.t||0)) data.meta=inc.m;
+  persist(); hydrate();
+}
+let pending=null;
+async function preview(code){
+  let inc;
+  try{inc=await decodePayload(code); if(!inc||inc.v!==1) throw 0;}
+  catch(e){openDlg(`<h3>読み取れませんでした</h3><p>データが壊れているか、途中までしか読み取れていません。もう一度読み取ってください。</p><div class="acts"><button type="button" class="btn" data-x="close">閉じる</button></div>`);return;}
+  const r=plan(inc), items=[];
+  if(r.cfg) items.push(`体制：${r.cfg}件を更新`);
+  if(r.meta) items.push("担当の呼び名を更新");
+  if(r.tAdd||r.tChg||r.tDel) items.push(`タスク：追加${r.tAdd}・変更${r.tChg}・削除${r.tDel}`);
+  if(r.off) items.push(`休み：${r.off}日分を更新`);
+  pending=inc;
+  openDlg(items.length?`<h3>取り込む内容</h3><p>相手のデータのうち、こちらより新しいものだけを取り込みます。</p><ul class="sumlist">${items.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+    <div class="acts"><button type="button" class="btn primary" data-x="apply">取り込む</button><button type="button" class="btn" data-x="close">やめる</button></div>`
+    :`<h3>新しい内容はありません</h3><p>受け取ったデータは、すでにこの端末と同じか、こちらのほうが新しい内容でした。</p><div class="acts"><button type="button" class="btn" data-x="close">閉じる</button></div>`);
+}
+
+dbody.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-x]"); if(!b) return;
+  const x=b.dataset.x;
+  if(x==="close") return closeDlg();
+  if(x==="make") return showShare();
+  if(x==="prev"||x==="next"){clearInterval(shareTimer);return dbody._fr&&dbody._fr.step(x==="next"?1:-1);}
+  if(x==="paste") return openPaste();
+  if(x==="pastego"){
+    const lines=dbody.querySelector("#pastebox").value.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+    newCollect(); let done=false; for(const l of lines){ if(onCode(l)){done=true;break;} }
+    if(!done&&dbody.querySelector("#prog")&&!dbody.querySelector("#prog").textContent) dbody.querySelector("#prog").textContent="コードが足りません。すべての行を貼り付けてください。";
+    return;
+  }
+  if(x==="apply"){ if(pending){apply(pending);pending=null;} closeDlg(); renderAll(); renderSet(); renderTasks(); setStatus("取り込みました"); return; }
+  if(x==="copy"){
+    const ta=dbody.querySelector("#copybox"), msg=dbody.querySelector("#moremsg");
+    ta.value=copyCode;
+    try{await navigator.clipboard.writeText(copyCode); msg.textContent="コピーしました。職場の決まりに沿った方法で相手に渡してください。";}
+    catch(err){ta.hidden=false;ta.select();msg.textContent="自動でコピーできませんでした。下の文字をすべて選んでコピーしてください。";}
+    return;
+  }
+  if(x==="wipe"){b.dataset.x="wipe2";b.textContent="本当に消す（元に戻せません）";return;}
+  if(x==="wipe2"){
+    try{localStorage.removeItem(DKEY);localStorage.removeItem(CKEY);localStorage.removeItem("gyomu-me");}catch(err){}
+    data={cfg:{},off:{},tasks:{},meta:{roleNames:{},t:0}}; checks={days:{}}; ME=""; hydrate();
+    closeDlg(); renderAll(); renderSet(); renderTasks(); setStatus("この端末のデータを消しました"); return;
+  }
+});
+document.getElementById("btn-share").addEventListener("click",openShare);
+document.getElementById("btn-scan").addEventListener("click",openScan);
+document.getElementById("btn-more").addEventListener("click",openMore);
+
+/* ---------- start ---------- */
+loadData();
+renderAll(); renderSet(); renderTasks();
+if("serviceWorker" in navigator&&location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body></html>
